@@ -9,20 +9,28 @@
 ;
 
 
+(defun giveRow (pos)
+    (car pos)
+)
+
+(defun giveColumn (pos)
+    (car (cdr pos))
+)
+
 (defun checkEqualRight (pos list)
-    (= (nth (car (cdr pos)) list) (nth (1+ (car (cdr pos))) list))
+    (eq (nth (car (cdr pos)) list) (nth (1+ (car (cdr pos))) list))
 )
 
 (defun checkEqualLeft (pos list)
-    (= (nth (car (cdr pos)) list) (nth (1- (car (cdr pos))) list))
+    (eq (nth (car (cdr pos)) list) (nth (1- (car (cdr pos))) list))
 )
 
 (defun checkEqualAbove (pos list1 list2)
-    (= (nth (car (cdr pos)) list1) (nth (car (cdr pos)) (nth (1- (car pos)) list2)))
+    (eq (nth (car (cdr pos)) list1) (nth (car (cdr pos)) (nth (1- (car pos)) list2)))
 )
 
 (defun checkEqualBelow (pos list1 list2)
-    (= (nth (car (cdr pos)) list1) (nth (car (cdr pos)) (nth (1+ (car pos)) list2)))
+    (eq (nth (car (cdr pos)) list1) (nth (car (cdr pos)) (nth (1+ (car pos)) list2)))
 )
 
 (defun checkFirstColumn (pos list)
@@ -42,27 +50,11 @@
 )
 
 
-(defun objectiveState (gameTable) 
-    (loop for row from 0 to (1- (list-length gameTable))
-    do    
-    (setq copiedList (copy-tree (nth row gameTable)))
-        (loop for column from 0 to (1- (list-length (nth 0 gameTable)))
-        do
-            (cond 
-                ( (and (checkLastColumn (list row column) copiedList) (eq nil (checkLastRow (list row column) gameTable))) (cond ((checkEqualBelow (list row column) copiedList gameTable)  (return-from objectiveState nil))))
-                ( (and (checkLastRow (list row column) gameTable) (eq nil (checkLastColumn (list row column) copiedList))) (cond ((checkEqualRight (list row column) copiedList) (return-from objectiveState nil))))
-                ( (and (eq nil (checkLastColumn (list row column) copiedList)) (= (nth column copiedlist) (nth (1+ column) copiedlist)))  (return-from objectiveState  nil))
-                ( (and (eq nil (checkLastRow (list row column) gameTable)) (= (nth column copiedList) (nth column (nth (1+ row) gameTable)))) (return-from objectiveState nil) )
-            )
-        )
-    )
-    
-    (return-from objectiveState t)
-    
+(defun objectiveState (gameTable)
+    (null (generateSucces gameTable))
 )
 
-
-(defun generate-succes (gameTable)
+(defun generateSucces (gameTable)
     (setq generated '())
     (setq expanded '())
 
@@ -71,16 +63,11 @@
         (loop for column from 0 to (1- (list-length (nth 0 gameTable)))
         do
             (progn
-                (if (null (elementInListOfLists (list row column) expanded))
+                (if (and (null (elementInListOfLists (list row column) expanded)) (giveElement (list row column) gameTable) )
                 (progn
                     (setq generated (performExpansion '() (list (list row column)) gameTable) )
-                    ;(write generated)(terpri)
                     (if (/= 1 (list-length generated))
-                        (progn
-                    ;(write "here")(terpri)
                         (setq expanded (appendLists expanded (list generated)))
-                        ;(write expanded)(terpri)(terpri)(terpri)(terpri)       
-                        )
                     )
                     (setq generated '())
                 )
@@ -88,21 +75,106 @@
             )
         )
     )
-    expanded
+    (makePlay expanded gameTable)
+)
+
+(defun makePlay (expanded gameTable)
+    (setq newGameTable (copy-tree gameTable))
+    (cond
+        ( (null  expanded) nil)
+        (t (append (list (clearBoard (car expanded) newGameTable)) (makePlay (cdr expanded) gameTable))   )
+    )
 )
 
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defun recFunc (generated gameTable)
-    (setq res (performExpansion (car generated) gameTable))
-    (cond
-    ( (eq (list-length generated) (list-length res)) generated)
-    (t (progn (setq generated (appendLists generated res)) (write generated)) (appendLists res (recFunc (cdr generated) gameTable) )   )
+(defun clearBoard (positions gameTable)
+    (cond 
+        ( (null positions) gameTable)
+        (t (progn 
+                (setf (nth (giveColumn (car positions)) (nth (giveRow (car positions)) gameTable)) nil)
+                (clearBoard (cdr positions) gameTable)
+           )
+        )
     )
-);(appendLists (expandRight (car generated) gameTable) (expandBottom (car generated) gameTable))
+)
 
+
+(defun propagateChange (gameTable)
+    (loop for row from 0 to (1- (list-length gameTable))
+    do
+        (loop for column from 0 to (1- (list-length (nth 0 gameTable)))
+        do
+            (if (giveElement (list row column) gameTable)
+                (progn
+                
+                    (if (and (/= row (1- (list-length gameTable))) (and (giveElement (list row column) gameTable) (null (giveElement (list (1+ row) column) gameTable)) ))
+                        (progn
+                            (propagateChangeVertical (list row column) gameTable)
+                        )
+                    )
+
+                    (if (= column (1- (list-length (nth 0 gameTable))))
+                        (if (null (giveElement (list row column) gameTable))
+                            (goleft (list row column) gameTable)
+                        )
+                    )
+                )
+            )
+        )
+    )
+)
+
+
+(defun goLeft (pos gameTable)
+    (propagateChangeHorizontal pos gameTable)
+    (setq posUp (list (1- (car pos)) (car (cdr pos))))
+    (cond
+        ( (= (car pos) 0) t)
+        (t (goleft posUp gameTable))
+    )
+)
+
+
+(defun propagateChangeVertical (pos gameTable)
+    (setq posDown (list (1+ (car pos)) (car (cdr pos))))
+    (if (/= (car pos) 0)
+        (progn
+            (setq posUp (list (1- (car pos)) (car (cdr pos))))
+            (switchPosition pos posDown gameTable)
+            (propagateChangeVertical posUp gameTable)
+        )
+    (switchPosition pos posDown gameTable)
+    )
+)
+
+(defun propagateChangeHorizontal (pos gameTable)
+    (setq posRight (list (car pos) (1+ (car (cdr pos)))))
+    (if (/= (car (cdr pos)) (1- (list-length (nth 0 gameTable))))
+            (progn
+                (setq posLeft (list (car pos) (1- (car (cdr pos)))))
+                (switchPosition pos posRight gameTable)
+                (propagateChangeHorizontal posRight gameTable)
+            )
+            (setf (nth (giveColumn pos) (nth (giveRow pos) gameTable)) nil)    
+    )
+)
+
+(defun switchPosition (pos1 pos2 gameTable)
+    (setf element1 (giveElement pos1 gameTable))
+    (setf element2 (giveElement pos2 gameTable))
+   ; (if (/= (car (cdr pos2)) (list-length (nth 0 gameTable)))
+    (setf (nth (giveColumn pos2) (nth (giveRow pos2) gameTable)) element1)
+    (setf (nth (giveColumn pos1) (nth (giveRow pos1) gameTable)) element2)
+)
+
+
+(defun checkEqualPos (pos1 pos2 gameTable)
+    (= (giveElement pos1 gameTable) (giveElement))
+)
+
+(defun giveElement (pos gameTable)
+    (nth (car (cdr pos)) (nth (car pos) gameTable))
+)
 
 
 (defun expandRight (pos gameTable)
@@ -176,15 +248,11 @@
     (setq list2 (appendLists (expandLeft (car expanded) gameTable) (expandTop (car expanded) gameTable)))
     (setq newExpanded (appendLists list1 list2))
     (setq newVisited nil)
-    (setq newExpanded1 '())
-
     (dolist (element newExpanded)
         (if (and (null (elementInList element visited)))
             (progn
                 (setq visited (append visited (list element)))
-                (setq newVisited t)
-                
-                (if (and (null (elementInList element expanded)))
+                (if (and (null (elementInList element expanded)) expanded)
                     (setq expanded (append expanded (list element)))
                 )
             )
@@ -192,17 +260,10 @@
     )
     (cond
         ( (null (cdr expanded)) visited)
-        ( (null newVisited) visited)
-        (newVisited (performExpansion visited (cdr expanded) gameTable) )
+        (t (performExpansion visited (cdr expanded) gameTable) )
     )
 )
 
-
-(defun objectiveState1 (gameTable)
-    (null (generate-succes gameTable))
-)
-
- 
 
 (defun appendLists (list1 list2)
     (setq list (copy-tree list2))
@@ -237,26 +298,24 @@
 ; (append res (list pos))(write res)
 
 (defun example1 () '((1 2 3 4 5) (6 7 8 9 10) (1 2 3 4 5)) )
-(defun example2 () '((1 2 2 3 3) (1 2 3 2 3) (1 1 3 3 3)) )
+(defun example2 () '((1 2 2 1 3) (1 2 3 2 3) (1 1 3 3 3)) )
+(defun example3 () '((nil 2 2 1 3) (nil 2 3 2 3) (nil nil 3 3 3)))
+(defun example4 () '((2 1 3 2 3 3 2 3 3 3) (1 3 2 2 1 3 3 2 2 2) (1 3 1 3 2 2 2 1 2 1) (1 3 3 3 1 3 1 1 1 3)))
 
-(write (objectiveState (example1)))
-(terpri)
-(write (objectiveState (example2)))
-(terpri)
-(write (example2))
-(terpri)
+(setq a (example3))
 
-(write (expandRight '(0 2) (example2)))
-(terpri)
-(write (expandBottom '(0 4) (example2)))
-(terpri)
 
-(setq generated (list '(0 0)))
-
-(write (appendLists (expandRight '(0 2) (example2)) (expandBottom '(0 4) (example2))))
-
-'((1 2 3 3 3) 
-  (1 2 2 1 3) 
-  (1 2 2 3 3))
-
-  '((1 2 2 3 3) (2 2 2 1 3) (1 2 2 2 2) (1 1 1 1 1))
+(defun imprime-puzzle (game)
+    (write 'puzzle)
+    (terpri)
+    (dolist (l game)
+        (dolist (e l)
+            (if (null e)
+                (write e)
+                (progn (princ #\space) (write e) (princ #\space))
+            )
+            (princ #\space)
+        )
+        (terpri)
+    )
+    (terpri))
