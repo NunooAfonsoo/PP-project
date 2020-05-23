@@ -75,7 +75,12 @@
             )
         )
     )
-    (makePlay expanded gameTable)
+    (setq newBoards '())
+    (dolist (board (makePlay expanded gameTable))
+        (setq newBoards (append newBoards (list (propagateChange board)))) 
+    )
+    newBoards
+
 )
 
 (defun makePlay (expanded gameTable)
@@ -122,6 +127,7 @@
             )
         )
     )
+    gameTable
 )
 
 
