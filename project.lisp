@@ -50,13 +50,14 @@
 )
 
 
-(defun objectiveState (gameTable)
-    (null (generateSucces gameTable))
+(defun objectiveState (state)
+    (null (generateSucces state))
 )
 
-(defun generateSucces (gameTable)
+(defun generateSucces (state)
     (setq generated '())
     (setq expanded '())
+    (setq gameTable (state-currentGameTable state))
 
     (loop for row from 0 to (1- (list-length gameTable))
     do
@@ -75,12 +76,28 @@
             )
         )
     )
-    (setq newBoards '())
-    (dolist (board (makePlay expanded gameTable))
-        (setq newBoards (append newBoards (list (propagateChange board)))) 
-    )
-    newBoards
 
+    (setq newBoards '())
+    (dolist (pieces expanded)
+        (setq newGameTable (copy-tree gameTable))
+        (setq board (clearBoard pieces newGameTable))
+
+        (setq newBoards (append newBoards (list (make-state :currentGameTable  (propagateChange board)
+                                                      :previousState state
+                                                      :score (+ (state-score state) (* (- (list-length pieces) 2 ) (- (list-length pieces) 2 )))
+                                                      :piecesEliminated (list-length pieces)
+                                                      :nDoubles))))
+    )
+
+    
+    ;(setq newBoards '())
+    ;(dolist (board (makePlay expanded gameTable))
+    ;  (setq newBoards (append newBoards (list (make-state :currentGameTable  (propagateChange board)
+    ;                                                  :previousState state
+    ;                                                  :score nil
+    ;                                                  :piecesEliminated (+ (state-piecesEliminated state) (list-length expanded))))))
+    ;)
+    newBoards
 )
 
 (defun makePlay (expanded gameTable)
@@ -120,7 +137,7 @@
                 )
             )
             (if (and (= row (1- (list-length gameTable))) )
-                (if (null (giveElement (list row column) gameTable))
+                (if (and (null (giveElement (list row column) gameTable)) (giveElement (list row (1+ column)) gameTable))
                     (goleft (list row column) gameTable)
                 )
             )
@@ -133,8 +150,12 @@
 (defun goLeft (pos gameTable)
     (propagateChangeHorizontal pos gameTable)
     (setq posUp (list (1- (car pos)) (car (cdr pos))))
+    (setq posLeft (list (1- (list-length gameTable)) (1- (car (cdr pos)))))
+
     (cond
-        ( (= (car pos) 0) t)
+        ( (and (= (car pos) 0) (= (car (cdr pos)) 0)) nil )
+        ( (and (= (car pos) 0) (null (giveElement posLeft gameTable))) (goleft posLeft gameTable))
+        ( (= (car pos) 0) nil)
         (t (goleft posUp gameTable))
     )
 )
@@ -152,8 +173,11 @@
     )
 )
 
+
 (defun propagateChangeHorizontal (pos gameTable)
     (setq posRight (list (car pos) (1+ (car (cdr pos)))))
+    (setq posLeft (list (car pos) (1- (car (cdr pos)))))
+
     (if (/= (car (cdr pos)) (1- (list-length (nth 0 gameTable))))
             (progn
                 (setq posLeft (list (car pos) (1- (car (cdr pos)))))
@@ -164,10 +188,10 @@
     )
 )
 
+
 (defun switchPosition (pos1 pos2 gameTable)
     (setf element1 (giveElement pos1 gameTable))
     (setf element2 (giveElement pos2 gameTable))
-   ; (if (/= (car (cdr pos2)) (list-length (nth 0 gameTable)))
     (setf (nth (giveColumn pos2) (nth (giveRow pos2) gameTable)) element1)
     (setf (nth (giveColumn pos1) (nth (giveRow pos1) gameTable)) element2)
 )
@@ -176,6 +200,7 @@
 (defun checkEqualPos (pos1 pos2 gameTable)
     (= (giveElement pos1 gameTable) (giveElement))
 )
+
 
 (defun giveElement (pos gameTable)
     (nth (car (cdr pos)) (nth (car pos) gameTable))
@@ -299,8 +324,20 @@
 )
 
 
+;;;;;;;;;;;;;;;;;;;;;;;Heuristics;;;;;;;;;;;;;;;;;;;;;;;;;
 
-; (append res (list pos))(write res)
+(defun largestGroupSize (state)
+    (/ 1 (state-piecesEliminated state))
+)
+
+(defstruct state
+    currentGameTable
+    previousState
+    score
+    piecesEliminated
+    nDoubles
+)
+
 
 (defun example1 () '((1 2 3 4 5) (6 7 8 9 10) (1 2 3 4 5)) )
 (defun example2 () '((1 2 2 1 3) (1 2 3 2 3) (1 1 3 3 3)) )
@@ -324,3 +361,19 @@
         (terpri)
     )
     (terpri))
+
+
+(setq b (make-state :currentGameTable (example4)
+            :previousState nil
+            :score 0
+            :piecesEliminated 0
+            :nDoubles 0))
+
+(load "procura")
+(setq problema (cria-problema b '(generatesucces) :objectivo? #'objectivestate :heuristica 'largestGroupSize))
+(setq c (procura problema 'largura))
+
+
+(dolist (game (nth 0 c)) 
+    (imprime-puzzle (state-currentGameTable game))
+)
