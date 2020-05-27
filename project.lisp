@@ -8,6 +8,27 @@
 ;
 ;
 
+(load "procura")
+(setq time (get-internal-run-time))
+
+
+(defstruct state
+            currentGameTable
+            previousState
+            score
+            piecesEliminated
+            piecesEliminatedSoFar
+            playMadeSoFar
+            >)
+
+
+(setq bestState (make-state :currentGameTable nil
+                            :previousState nil
+                            :score 0
+                            :piecesEliminated 0
+                            :piecesEliminatedSoFar 0
+                            :playMadeSoFar nil
+                            ))
 
 (defun giveRow (pos)
     (car pos)
@@ -51,10 +72,18 @@
 
 
 (defun objectiveState (state)
-    (null (generateSucces state))
+    (if (>= (/ (- (get-internal-run-time) time) INTERNAL-TIME-UNITS-PER-SECOND) 5) 
+        t
+        nil 
+    )
 )
 
 (defun generateSucces (state)
+    (if (> (state-score state) (state-score bestState))
+        (setq bestState state)
+    )
+
+
     (setq generated '())
     (setq expanded '())
     (setq gameTable (state-currentGameTable state))
@@ -81,22 +110,14 @@
     (dolist (pieces expanded)
         (setq newGameTable (copy-tree gameTable))
         (setq board (clearBoard pieces newGameTable))
-
         (setq newBoards (append newBoards (list (make-state :currentGameTable  (propagateChange board)
                                                       :previousState state
                                                       :score (+ (state-score state) (* (- (list-length pieces) 2 ) (- (list-length pieces) 2 )))
                                                       :piecesEliminated (list-length pieces)
-                                                      :nDoubles))))
+                                                      :piecesEliminatedSoFar (+ (state-piecesEliminatedSoFar state) (list-length pieces))
+                                                      :playMadeSoFar (append (list (car pieces)) (state-playMadeSoFar state))
+                                                      ))))
     )
-
-    
-    ;(setq newBoards '())
-    ;(dolist (board (makePlay expanded gameTable))
-    ;  (setq newBoards (append newBoards (list (make-state :currentGameTable  (propagateChange board)
-    ;                                                  :previousState state
-    ;                                                  :score nil
-    ;                                                  :piecesEliminated (+ (state-piecesEliminated state) (list-length expanded))))))
-    ;)
     newBoards
 )
 
@@ -324,19 +345,99 @@
 )
 
 
+(defun gameTableSize (gameTable)
+    (* (list-length gameTable) (list-length (nth 0 gameTable)))
+)
+
 ;;;;;;;;;;;;;;;;;;;;;;;Heuristics;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun largestGroupSize (state)
-    (/ 1 (state-piecesEliminated state))
+(defun largestGroupSize (state)   
+    (state-piecesEliminated state)
 )
 
-(defstruct state
-    currentGameTable
-    previousState
-    score
-    piecesEliminated
-    nDoubles
+
+(defun leastSinglesNDoubles (state)
+    (setq nSinglesNDoubles 0)
+    (setq nPiecesGroups 0)
+
+    (setq generated '())
+    (setq expanded '())
+    (setq gameTable (state-currentGameTable state))
+
+    (loop for row from 0 to (1- (list-length gameTable))
+    do
+        (loop for column from 0 to (1- (list-length (nth 0 gameTable)))
+        do
+            (progn
+                (if (and (null (elementInListOfLists (list row column) expanded)) (giveElement (list row column) gameTable) )
+                (progn
+                    (setq generated (performExpansion '() (list (list row column)) gameTable) )
+                    (if (/= 1 (list-length generated))
+                        (setq expanded (appendLists expanded (list generated)))
+                    )
+                    (setq generated '())
+                )
+                )
+            )
+        )
+    )
+
+    (dolist (group expanded)
+        (setq nPiecesGroups (+ nPiecesGroups (list-length group)))
+        (if (= (list-length group) 2) 
+            (setq nSinglesNDoubles (1+ nSinglesNDoubles))
+        )
+    )
+
+    (setq nSinglesNDoubles (+ nSinglesNDoubles (- (gameTableSize (state-currentGameTable state)) (state-piecesEliminatedSoFar state))))
+    (setq nSinglesNDoubles (- nSinglesNDoubles nPiecesGroups))
+
+    (if (/= nSinglesNDoubles 0)
+    (/ 1 nSinglesNDoubles)
+    0
+    )
 )
+
+
+(defun resolve-same-game (gameTable approach)
+    (setq initialState (make-state :currentGameTable gameTable
+                                   :previousState nil
+                                   :score 0
+                                   :piecesEliminated 0
+                                   :piecesEliminatedSoFar 0
+                                   :playMadeSoFar nil
+                                   ))
+
+    (cond 
+        ((string-equal approach "melhor.abordagem")
+        (setq problema (cria-problema initialState '(generatesucces) :objectivo? #'objectiveState :heuristica 'largestGroupSize)) 
+        (procura problema 'largura)
+
+        (makeOutput bestState))
+
+        ((string-equal approach "a*.melhor.heuristica")
+        (setq problema (cria-problema initialState '(generatesucces) :objectivo? #'objectiveState :heuristica 'largestGroupSize)) (procura problema 'a*)
+        (makeOutput bestState))
+
+        ((string-equal approach "a*.melhor.heuristica.alternativa")
+        (setq problema (cria-problema initialState '(generatesucces) :objectivo? #'objectiveState :heuristica 'leastSinglesNDoubles)) (procura problema 'a*)
+        (makeOutput bestState))
+
+        ((string-equal approach "sondagem.iterativa")
+        (setq problema (cria-problema initialState '(generatesucces) :objectivo? #'objectiveState :heuristica 'largestGroupSize)) (sondagemIterativa problema))
+
+        ((string-equal approach "abordagem.alternativa")
+        (setq problema (cria-problema initialState '(generatesucces) :objectivo? #'objectiveState :heuristica 'largestGroupSize)) (abordagemIterativa problema))
+
+    )
+)
+
+
+(defun makeOutput (state)
+    (reverse (state-playMadeSoFar state))
+)
+
+
 
 
 (defun example1 () '((1 2 3 4 5) (6 7 8 9 10) (1 2 3 4 5)) )
@@ -363,15 +464,23 @@
     (terpri))
 
 
-(setq b (make-state :currentGameTable (example4)
+(defun estado-inicial()
+    '((1 2 2 3 3)
+      (2 2 2 1 3)
+      (1 2 2 2 2)
+      (1 1 1 1 1)))
+
+(setq b (make-state :currentGameTable (estado-inicial)
             :previousState nil
             :score 0
             :piecesEliminated 0
-            :nDoubles 0))
+            :piecesEliminatedSoFar 0
+            :playMadeSoFar nil
+            ))
 
-(load "procura")
+
 (setq problema (cria-problema b '(generatesucces) :objectivo? #'objectivestate :heuristica 'largestGroupSize))
-(setq c (procura problema 'largura))
+(setq c (procura problema 'a*))
 
 
 (dolist (game (nth 0 c)) 
